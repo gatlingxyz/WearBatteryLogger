@@ -11,7 +11,11 @@ import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.WearableListenerService;
 
 /**
- * Created by gimmiepepsi on 10/11/14.
+ * Here's my thought process. I needed a service on the wearable to track battery.
+ * Initially was going to use IntentService, but realized I would have to get and start a new
+ * Google API Client each and every time. I figured that was going to tax the battery. So I switched
+ * to just a service that started by this WearableListenerService. This class's only function is
+ * to start (and stop in the future) the service on command.
  */
 public class BatterLoggerListener extends WearableListenerService {
 
@@ -48,11 +52,12 @@ public class BatterLoggerListener extends WearableListenerService {
 
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
-        Log.v(TAG, "Starting Battery Logger Service");
         if(messageEvent.getPath().endsWith("start")) {
+            Log.v(TAG, "Starting Battery Logger Service");
             startService(new Intent(this, BatteryLoggerService.class));
         }
         else {
+            Log.v(TAG, "Stopping Battery Logger Service");
             stopService(new Intent(this, BatteryLoggerService.class));
         }
     }

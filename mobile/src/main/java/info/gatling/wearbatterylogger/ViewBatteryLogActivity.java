@@ -40,6 +40,11 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
     private GoogleApiClient mGoogleApiClient;
     private final static String TAG = "TAVON Battery Logger";
 
+    /**
+     * At some point, I'm going to allow the mobile app to stop the service and start it on command.
+     * I'm not sure if checking and saving battery info is putting extra strain on the battery, so I
+     * would like to be able to turn it off when I don't need it anymore without having to delete the app.
+     */
     private enum ServiceCommand{
         START("/start"), STOP("/stop");
 
@@ -63,7 +68,7 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
                         Toast.makeText(ViewBatteryLogActivity.this, "Connected to wearable", Toast.LENGTH_SHORT).show();
 
                         talkToWearableService(ServiceCommand.START);
-                        init();
+                        loadAllBatteryInfo();
                     }
                     @Override
                     public void onConnectionSuspended(int cause) {
@@ -82,8 +87,10 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
         mGoogleApiClient.connect();
     }
 
-    private void init(){
-
+    /**
+     * Gets all the battery info saved using the DataApi and pass it to our adapter.
+     */
+    private void loadAllBatteryInfo() {
         PendingResult<DataItemBuffer> results = Wearable.DataApi.getDataItems(mGoogleApiClient);
         results.setResultCallback(new ResultCallback<DataItemBuffer>() {
             @Override
@@ -94,50 +101,13 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
                 dataItems.release();
             }
         });
-
-//        new AsyncTask<Void, Void, DataMap>(){
-//
-//            @Override
-//            protected DataMap doInBackground(Void... params) {
-//
-//                DataApi.DataItemResult dataItemResult = Wearable.DataApi.getDataItem(mGoogleApiClient, getUriForDataItem()).await();
-//                if(dataItemResult != null && dataItemResult.getDataItem() != null) {
-//                    DataMap dataMap = DataMapItem.fromDataItem(dataItemResult.getDataItem()).getDataMap();
-//                    return dataMap;
-//                }
-//
-//                return null;
-//            }
-//
-//            @Override
-//            protected void onPostExecute(DataMap dataMap) {
-//                if(dataMap != null) {
-//                    setListAdapter(new BatteryLogAdapter(dataMap));
-//                }
-//
-//            }
-//        }.execute();
-
-
-
     }
 
-//    private Uri getUriForDataItem() {
-//        String nodeId = getRemoteNodeId();
-//        return new Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).authority(nodeId).path("/battery").build();
-//    }
-//
-//    private String getRemoteNodeId() {
-//        HashSet<String> results = new HashSet<String>();
-//        NodeApi.GetConnectedNodesResult nodesResult =
-//                Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).await();
-//        List<Node> nodes = nodesResult.getNodes();
-//        if (nodes.size() > 0) {
-//            return nodes.get(0).getId();
-//        }
-//        return null;
-//    }
-
+    /**
+     * Send a quick message to the wearable listener. At this time, it's only sending START but it's
+     * built to be able to send STOP whenever I get the code up and running.
+     * @param command
+     */
     private void talkToWearableService(final ServiceCommand command){
 
         new AsyncTask<Void, Void, List<Node>>(){
@@ -183,7 +153,7 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
         Log.v(TAG, "On DataChanged");
-        init();
+        loadAllBatteryInfo();
     }
 
     private class BatteryLogAdapter extends BaseAdapter{
@@ -198,6 +168,13 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
                     batteryLogItems.add(new BatteryLogItem(Long.valueOf(dataItem.getUri().getLastPathSegment()), DataMapItem.fromDataItem(dataItem).getDataMap()));
                 }
                 catch(NumberFormatException e){
+                    /**
+                     * This exists because, if you look at my previous commits, everything used to be saved to the path
+                     * "/battery". When I discovered what else I could get from the battery intent, I had to change
+                     * the way the data was saved and switched to creating a new PutDataMapRequest for each timestamp
+                     * that held all the relevant information. This try/catch is to remove any lingering "/battery" I had,
+                     * as well as delete something that just so happens to go wrong.
+                     */
                     Wearable.DataApi.deleteDataItems(mGoogleApiClient, dataItem.getUri()).setResultCallback(new ResultCallback<DataApi.DeleteDataItemsResult>() {
                         @Override
                         public void onResult(DataApi.DeleteDataItemsResult deleteDataItemsResult) {
@@ -233,6 +210,7 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
             BatteryHolder holder;
             if(convertView == null){
                 holder = new BatteryHolder();
+                // Todo: Make own view
                 convertView = getLayoutInflater().inflate(android.R.layout.two_line_list_item, null);
                 holder.time = (TextView) convertView.findViewById(android.R.id.text1);
                 holder.battery = (TextView) convertView.findViewById(android.R.id.text2);
@@ -247,14 +225,12 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
             Calendar calendar = Calendar.getInstance();
             calendar.setTimeInMillis(batteryLogItem.time);
 
+            //  TODO: Get local time format or set up some customization for it
             holder.time.setText(new SimpleDateFormat("KK:mm | MMMM dd, y").format(calendar.getTime()));
             holder.battery.setText(batteryLogItem.battery + "% ||| " + batteryLogItem.fahrenheit + "\u00B0F " + batteryLogItem.powerSource);
 
-
             return convertView;
         }
-
-
     }
 
     private class BatteryLogItem implements Comparable<BatteryLogItem>{
@@ -293,7 +269,7 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
 
         @Override
         public int compareTo(BatteryLogItem another) {
-            return another.time.compareTo(time);
+            return another.time.compareTo(time); // Newest up top
         }
     }
 }
