@@ -1,8 +1,8 @@
 package info.gatling.wearbatterylogger;
 
 import android.app.ListActivity;
-import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.BatteryManager;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -17,21 +17,20 @@ import com.google.android.gms.common.api.PendingResult;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataItem;
+import com.google.android.gms.wearable.DataItemBuffer;
 import com.google.android.gms.wearable.DataMap;
 import com.google.android.gms.wearable.DataMapItem;
 import com.google.android.gms.wearable.MessageApi;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.NodeApi;
-import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Created by gimmiepepsi on 10/11/14.
@@ -85,57 +84,59 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
 
     private void init(){
 
-        new AsyncTask<Void, Void, DataMap>(){
-
+        PendingResult<DataItemBuffer> results = Wearable.DataApi.getDataItems(mGoogleApiClient);
+        results.setResultCallback(new ResultCallback<DataItemBuffer>() {
             @Override
-            protected DataMap doInBackground(Void... params) {
-
-                DataApi.DataItemResult dataItemResult = Wearable.DataApi.getDataItem(mGoogleApiClient, getUriForDataItem()).await();
-                if(dataItemResult != null && dataItemResult.getDataItem() != null) {
-                    DataMap dataMap = DataMapItem.fromDataItem(dataItemResult.getDataItem()).getDataMap();
-                    return dataMap;
+            public void onResult(DataItemBuffer dataItems) {
+                if (dataItems.getCount() != 0) {
+                    setListAdapter(new BatteryLogAdapter(dataItems));
                 }
-
-                return null;
+                dataItems.release();
             }
+        });
 
-            @Override
-            protected void onPostExecute(DataMap dataMap) {
-                if(dataMap != null) {
-                    setListAdapter(new BatteryLogAdapter(dataMap));
-                }
-
-            }
-        }.execute();
+//        new AsyncTask<Void, Void, DataMap>(){
 //
-//
-//        Wearable.DataApi.getDataItem(mGoogleApiClient, getUriForDataItem()).setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
 //            @Override
-//            public void onResult(DataApi.DataItemResult dataItemResult) {
+//            protected DataMap doInBackground(Void... params) {
 //
+//                DataApi.DataItemResult dataItemResult = Wearable.DataApi.getDataItem(mGoogleApiClient, getUriForDataItem()).await();
+//                if(dataItemResult != null && dataItemResult.getDataItem() != null) {
+//                    DataMap dataMap = DataMapItem.fromDataItem(dataItemResult.getDataItem()).getDataMap();
+//                    return dataMap;
+//                }
 //
+//                return null;
+//            }
+//
+//            @Override
+//            protected void onPostExecute(DataMap dataMap) {
+//                if(dataMap != null) {
+//                    setListAdapter(new BatteryLogAdapter(dataMap));
+//                }
 //
 //            }
-//        });
+//        }.execute();
+
 
 
     }
 
-    private Uri getUriForDataItem() {
-        String nodeId = getRemoteNodeId();
-        return new Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).authority(nodeId).path("/battery").build();
-    }
-
-    private String getRemoteNodeId() {
-        HashSet<String> results = new HashSet<String>();
-        NodeApi.GetConnectedNodesResult nodesResult =
-                Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).await();
-        List<Node> nodes = nodesResult.getNodes();
-        if (nodes.size() > 0) {
-            return nodes.get(0).getId();
-        }
-        return null;
-    }
+//    private Uri getUriForDataItem() {
+//        String nodeId = getRemoteNodeId();
+//        return new Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).authority(nodeId).path("/battery").build();
+//    }
+//
+//    private String getRemoteNodeId() {
+//        HashSet<String> results = new HashSet<String>();
+//        NodeApi.GetConnectedNodesResult nodesResult =
+//                Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).await();
+//        List<Node> nodes = nodesResult.getNodes();
+//        if (nodes.size() > 0) {
+//            return nodes.get(0).getId();
+//        }
+//        return null;
+//    }
 
     private void talkToWearableService(final ServiceCommand command){
 
@@ -189,10 +190,21 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
 
         private List<BatteryLogItem> batteryLogItems = new ArrayList<BatteryLogItem>();
 
-        public BatteryLogAdapter(DataMap dataMap){
-            Set<String> keys = dataMap.keySet();
-            for(String key : keys){
-                batteryLogItems.add(new BatteryLogItem(Long.valueOf(key), dataMap.getInt(key)));
+        public BatteryLogAdapter(DataItemBuffer dataItems){
+            for(DataItem dataItem : dataItems){
+                final String time = dataItem.getUri().getLastPathSegment();
+                Log.v(TAG, "Time: " + time);
+                try {
+                    batteryLogItems.add(new BatteryLogItem(Long.valueOf(dataItem.getUri().getLastPathSegment()), DataMapItem.fromDataItem(dataItem).getDataMap()));
+                }
+                catch(NumberFormatException e){
+                    Wearable.DataApi.deleteDataItems(mGoogleApiClient, dataItem.getUri()).setResultCallback(new ResultCallback<DataApi.DeleteDataItemsResult>() {
+                        @Override
+                        public void onResult(DataApi.DeleteDataItemsResult deleteDataItemsResult) {
+                            Log.v(TAG, "Deleted " + deleteDataItemsResult.getNumDeleted() + " " + time + " data item");
+                        }
+                    });
+                }
             }
             Collections.sort(batteryLogItems);
         }
@@ -236,7 +248,7 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
             calendar.setTimeInMillis(batteryLogItem.time);
 
             holder.time.setText(new SimpleDateFormat("KK:mm | MMMM dd, y").format(calendar.getTime()));
-            holder.battery.setText(batteryLogItem.battery + "%");
+            holder.battery.setText(batteryLogItem.battery + "% ||| " + batteryLogItem.fahrenheit + "\u00B0F " + batteryLogItem.powerSource);
 
 
             return convertView;
@@ -248,11 +260,35 @@ public class ViewBatteryLogActivity extends ListActivity implements DataApi.Data
     private class BatteryLogItem implements Comparable<BatteryLogItem>{
 
         public Long time;
-        public Integer battery;
+        public int battery;
+        public int temperature;
+        public String powerSource;
 
-        public BatteryLogItem(Long time, Integer battery){
+        public double fahrenheit;
+        public double celsius;
+
+        public BatteryLogItem(Long time, DataMap dataMap){
             this.time = time;
-            this.battery = battery;
+            this.battery = dataMap.getInt(BatteryManager.EXTRA_LEVEL);
+            this.temperature = dataMap.getInt(BatteryManager.EXTRA_TEMPERATURE);
+
+            int source = dataMap.getInt(BatteryManager.EXTRA_PLUGGED);
+            switch(source){
+                case BatteryManager.BATTERY_PLUGGED_AC:
+                    powerSource = "(Plugged in, AC)";
+                    break;
+                case BatteryManager.BATTERY_PLUGGED_USB:
+                    powerSource = "(Plugged in, USB)";
+                    break;
+                case BatteryManager.BATTERY_PLUGGED_WIRELESS:
+                    powerSource = ("Wireless charging");
+                    break;
+                default:
+                    powerSource = "(Not charging, on battery)";
+            }
+
+            this.celsius = temperature/10;
+            this.fahrenheit = ((9/5) * celsius) + 32;
         }
 
         @Override

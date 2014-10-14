@@ -17,7 +17,6 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.DataEventBuffer;
-import com.google.android.gms.wearable.DataMapItem;
 import com.google.android.gms.wearable.MessageApi;
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.NodeApi;
@@ -81,10 +80,7 @@ public class BatteryLoggerService extends Service implements MessageApi.MessageL
         mGoogleApiClient.connect();
     }
 
-    private void addBatteryLogItem(Intent intent){
-        final Long time = Calendar.getInstance().getTimeInMillis();
-        final Integer battery = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
-
+    private void addBatteryLogItem(final Intent intent){
         new AsyncTask<Void, Void, Void>(){
             @Override
             protected Void doInBackground(Void... params) {
@@ -92,22 +88,13 @@ public class BatteryLoggerService extends Service implements MessageApi.MessageL
                         setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
                                               @Override
                                               public void onResult (DataApi.DataItemResult dataItemResult){
-                                                  PutDataMapRequest request;
-//                                                  DataMap dataMap;
+                                                  long time = Calendar.getInstance().getTimeInMillis();
+                                                  PutDataMapRequest request = PutDataMapRequest.create("/" + time);
 
-                                                  if (dataItemResult == null) {
-//                                                      Log.v(TAG, "Result was null, so creating");
-                                                      request = PutDataMapRequest.create("/battery");
-//                                                      dataMap = request.getDataMap();
+                                                  request.getDataMap().putInt(BatteryManager.EXTRA_LEVEL, intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0));
+                                                  request.getDataMap().putInt(BatteryManager.EXTRA_TEMPERATURE, intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0));
+                                                  request.getDataMap().putInt(BatteryManager.EXTRA_PLUGGED, intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0));
 
-                                                  } else {
-//                                                      Log.v(TAG, "Result was there, so get");
-                                                      request = PutDataMapRequest.createFromDataMapItem(DataMapItem.fromDataItem(dataItemResult.getDataItem()));
-//                                                      dataMap = DataMapItem.fromDataItem(dataItemResult.getDataItem()).getDataMap();
-                                                  }
-
-                                                  request.getDataMap().putInt(time.toString(), battery);
-                                                  Log.v(TAG, "Time: " + time + " | Battery: " + battery);
                                                   Wearable.DataApi.putDataItem(mGoogleApiClient, request.asPutDataRequest()).setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
                                                       @Override
                                                       public void onResult(DataApi.DataItemResult dataItemResult) {
